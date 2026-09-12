@@ -322,10 +322,14 @@ class TestRazorPagesViews:
 
 class TestRazorAndOrphanDetection:
     def test_view_files_do_not_appear_orphaned(self, tmp_path):
-        """Views are excluded from the orphan check by the extensions filter."""
+        """Views are excluded from the orphan check by the extensions filter.
+
+        The view is deliberately not ``@page``-routable and has more than 10
+        lines, so it would be reported orphaned without the filter.
+        """
 
         _csproj(tmp_path)
-        _write(tmp_path, "Pages/Home.razor", "@page \"/\"\n<h1>Home</h1>\n")
+        _write(tmp_path, "Components/_Stale.cshtml", "<p>stale partial</p>\n" * 7)
 
         graph = deps_detector_mod.build_dep_graph(tmp_path)
         orphans, _ = orphaned_detector_mod.detect_orphaned_files(
@@ -338,7 +342,35 @@ class TestRazorAndOrphanDetection:
             ),
         )
         orphan_files = {e["file"] for e in orphans}
-        assert _key(tmp_path, "Pages/Home.razor") not in orphan_files
+        assert _key(tmp_path, "Components/_Stale.cshtml") not in orphan_files
+
+    def test_code_behind_still_appears_orphaned(self, tmp_path):
+        """A code-behind with zero importers is still a real orphan finding."""
+
+        _csproj(tmp_path)
+        _write(
+            tmp_path,
+            "Services/Abandoned.razor.cs",
+            "namespace App.Services;\n\n"
+            "public partial class Abandoned\n{\n"
+            "    public string Describe()\n    {\n"
+            "        return \"nothing references this\";\n    }\n\n"
+            "    public int Count => 0;\n"
+            "}\n",
+        )
+
+        graph = deps_detector_mod.build_dep_graph(tmp_path)
+        orphans, _ = orphaned_detector_mod.detect_orphaned_files(
+            tmp_path,
+            graph,
+            extensions=[".cs"],
+            options=orphaned_detector_mod.OrphanedDetectionOptions(
+                extra_entry_patterns=[],
+                extra_barrel_names=set(),
+            ),
+        )
+        orphan_files = {e["file"] for e in orphans}
+        assert _key(tmp_path, "Services/Abandoned.razor.cs") in orphan_files
 
     def test_project_without_views_is_unaffected(self, tmp_path):
         """A view-free project builds the same graph as before."""

@@ -230,6 +230,12 @@ def detect_orphaned_files(
         if entry["importer_count"] > 0:
             continue
 
+        # Graphs may carry nodes that are not scored source files (e.g. Razor
+        # or cshtml views linked into the C# graph for edge resolution). Only
+        # files in the scanned extension set are orphan candidates.
+        if not any(filepath.endswith(ext) for ext in extensions):
+            continue
+
         r = rel(filepath)
 
         if any(p in r for p in all_entry_patterns):
