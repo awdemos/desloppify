@@ -11,13 +11,14 @@ from .cargo_policy import (
     detect_doctest_hygiene,
     detect_feature_hygiene,
 )
+from .deps import build_dep_graph
+from .manifest_deps import detect_unused_dependencies
 from .safety import (
     detect_async_locking,
     detect_drop_safety,
     detect_unsafe_api_usage,
 )
 from .smells import detect_smells
-from .deps import build_dep_graph
 
 __all__ = [
     "build_dep_graph",
@@ -30,6 +31,7 @@ __all__ = [
     "detect_import_hygiene",
     "detect_public_api_conventions",
     "detect_thread_safety_contracts",
+    "detect_unused_dependencies",
     "detect_unsafe_api_usage",
     "detect_smells",
 ]
