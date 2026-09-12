@@ -296,22 +296,9 @@ def tool_phase_check():
 
 def tool_phase_unused_imports():
     return _make_rust_tool_phase(
-        "cargo check unused imports",
-        lambda path: run_tool_result(
-            scope_cargo_command(RUST_CHECK_CMD, path), path, parse_cargo_unused_imports
-        ),
-        "rust_unused_import",
-        tier=3,
-    )
-
-
-def tool_phase_unused_imports():
-    return _make_rust_tool_phase(
         RUST_UNUSED_IMPORT_LABEL,
         lambda path: run_tool_result(
-            scope_cargo_command(RUST_CHECK_CMD, path),
-            path,
-            parse_cargo_unused_imports,
+            scope_cargo_command(RUST_CHECK_CMD, path), path, parse_cargo_unused_imports
         ),
         "rust_unused_import",
         tier=3,

@@ -77,6 +77,7 @@ Files in this folder:
 - Exposes Rust-specific commands:
   - `clippy_warning`
   - `cargo_error`
+  - `cargo_unused_import`
   - `rustdoc_warning`
   - `rust_import_hygiene`
   - `rust_feature_hygiene`
@@ -88,6 +89,8 @@ Files in this folder:
   - `rust_async_locking`
   - `rust_drop_safety`
   - `rust_unsafe_api`
+  - `rust_unused_dependency`
+  - `rust_unsafe_inventory`
 
 `extractors.py`:
 
@@ -162,11 +165,22 @@ Rust detectors are split by responsibility.
 - Cargo feature hygiene
 - README / inline doctest policy
 
+`detectors/manifest_deps.py`:
+
+- unused `[dependencies]` / `[dev-dependencies]` / `[build-dependencies]`
+  entries with zero source references (workspace-inherited deps are skipped)
+
 `detectors/safety.py`:
 
 - async locking checks
 - drop safety checks
 - unsafe API usage checks
+
+`detectors/unsafe_inventory.py`:
+
+- `unsafe fn` without a `# Safety` contract section
+- `unsafe impl` without any justification comment
+- per-file unsafe footprint markers for files with many unsafe sites
 
 `detectors/smells.py`:
 
@@ -242,13 +256,15 @@ Phases in order:
 3. Rust API + cargo policy
 4. `cargo clippy`
 5. `cargo check`
-6. `cargo rustdoc`
-7. Shared tree-sitter phases
-8. Signature analysis
-9. Test coverage
-10. Code smells
-11. Security
-12. Shared subjective review + duplicates tail
+6. `cargo check unused imports`
+7. `cargo rustdoc`
+8. `cargo audit`
+9. Shared tree-sitter phases
+10. Signature analysis
+11. Test coverage
+12. Code smells
+13. Security
+14. Shared subjective review + duplicates tail
 
 ## Scan flow in plain language
 
@@ -298,23 +314,29 @@ This is intentionally best-effort. It does not use `cargo metadata`, rust-analyz
 
 ## Tool-backed phases
 
-Rust has three official-tool phases in `tools.py` and `phases.py`:
+Rust has five official-tool phases in `tools.py` and `phases.py`:
 
 - `cargo clippy`
 - `cargo check`
+- `cargo check unused imports` (rustc's own `unused_imports` / `unused_qualifications` / `unused_extern_crates` warnings, parsed from the check JSON — compiler-precise, so trait imports used only through method calls are not false-flagged)
 - `cargo rustdoc`
+- `cargo audit`
 
 Current command policy:
 
 - Clippy runs workspace-wide, all targets, all features, JSON output
-- Cargo check runs workspace-wide, all targets, all features, JSON output
-- Rustdoc runs once per workspace library package with `cargo rustdoc -p <package> --lib`, all features, JSON output
+- Cargo check runs workspace-wide, all targets, all features, JSON output (the unused-import phase reuses the same command with cargo's cache, filtering to the unused-import diagnostic codes and skipping `#[cfg(test)]` module hits)
+- Rustdoc runs once per workspace library package with `cargo rustdoc -p <package> --lib` plus one run per binary target (`--bin <name>`), all features, JSON output
+- Cargo audit runs from the workspace root with JSON output
 
 Current rustdoc warnings enabled:
 
 - `broken_intra_doc_links`
 - `private_intra_doc_links`
 - `missing_crate_level_docs`
+- `missing_docs` (library targets only — too noisy on binaries)
+
+Cargo audit reports RustSec advisories from `cargo audit --json` as `cargo_audit_vulnerability` findings.
 
 If these tools are unavailable or fail, the plugin records reduced coverage rather than inventing findings.
 
@@ -360,9 +382,12 @@ It understands:
 
 - inline unit tests via `#[cfg(test)]` and `#[test]`
 - integration tests under `tests/`
+- doctest examples (`/// ``` ` / `//! ``` ` fences) as test evidence for the file that carries them
 - runtime entrypoints like `src/main.rs`, `src/bin/*`, and `build.rs`
 - `use`-based mapping from tests to production modules
 - barrel re-exports via `lib.rs`
+- `include!()` textual-inclusion ownership
+- tests exercising a type through its owner boundary
 
 This gives Rust better coverage mapping than generic import-only heuristics.
 
@@ -421,7 +446,9 @@ If you want to add new Rust behavior, use this order of preference.
 - The dependency graph is source-based, not compiler-backed
 - Regex fallback extraction is best-effort when tree-sitter is unavailable
 - Tool-backed phases depend on local Cargo tooling and workspace health
-- Rustdoc phase currently runs with `--lib`, so binary-only docs are not covered there
+- Cargo audit requires the `cargo-audit` plugin; when unavailable the phase records reduced coverage
+- The unused-dependency detector skips `workspace = true` inherited dependencies and cannot see attribute-driven usage of proc-macro crates beyond `#[derive(...)]` / attribute paths
+- Doctest crediting is presence-based; it does not count individual doctest assertions
 - Auto-fix coverage is intentionally narrow
 
 ## Testing
