@@ -11,7 +11,7 @@ generic_lang(
         {
             "label": "ktlint",
             "cmd": "ktlint --reporter=json",
-            "fmt": "json",
+            "fmt": "ktlint",
             "id": "ktlint_violation",
             "tier": 2,
             "fix_cmd": "ktlint --format",
