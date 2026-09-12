@@ -939,6 +939,7 @@ def test_run_rustdoc_result_scans_libs_and_bins_with_target_lint_sets(tmp_path):
                     {"name": "pkg-a", "kind": ["lib"], "crate_types": ["lib"]},
                     {"name": "cli", "kind": ["bin"], "crate_types": ["bin"]},
                     {"name": "daemon", "kind": ["bin"], "crate_types": ["bin"]},
+                    {"name": "integration", "kind": ["test"], "crate_types": ["bin"]},
                     {"kind": ["bin"], "crate_types": ["bin"]},
                 ],
             }

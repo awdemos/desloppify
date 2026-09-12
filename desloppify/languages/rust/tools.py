@@ -735,7 +735,9 @@ def _extract_workspace_rustdoc_invocations(
             if kinds & _LIB_TARGET_KINDS or crate_types & _LIB_TARGET_KINDS:
                 has_lib_target = True
                 continue
-            if "bin" not in kinds and "bin" not in crate_types:
+            # `kind` is authoritative: test/bench/example targets report
+            # crate_types ["bin"] but must not be documented as binaries.
+            if "bin" not in kinds:
                 continue
             target_name = target.get("name")
             if isinstance(target_name, str) and target_name.strip():
