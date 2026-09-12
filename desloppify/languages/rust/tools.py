@@ -65,6 +65,7 @@ def _parse_cargo_messages(
     skip_inline_cfg_test_modules: bool = False,
 ) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
+    seen: set[tuple[str, int, str]] = set()
     inline_test_cache: dict[str, tuple[tuple[int, int], ...]] = {}
     for raw_line in output.splitlines():
         line = raw_line.strip()
@@ -102,6 +103,12 @@ def _parse_cargo_messages(
         summary = rendered.splitlines()[0].strip()
         if code and code not in summary:
             summary = f"[{code}] {summary}"
+        # --all-targets compiles bins twice (binary + test harness); identical
+        # diagnostics from each compilation are one finding, not two.
+        key = (filename, line_no, summary)
+        if key in seen:
+            continue
+        seen.add(key)
         entries.append(
             {
                 "file": filename,
