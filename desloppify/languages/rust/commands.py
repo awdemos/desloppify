@@ -36,6 +36,8 @@ from desloppify.languages.rust.detectors import (
     detect_smells,
     detect_thread_safety_contracts,
     detect_unsafe_api_usage,
+    detect_unsafe_inventory,
+    detect_unused_dependencies,
 )
 from desloppify.languages.rust.detectors.deps import build_dep_graph
 from desloppify.languages.rust.extractors import extract_functions, find_rust_files
@@ -44,11 +46,13 @@ from desloppify.languages.rust.phases import (
     RUST_CLIPPY_LABEL,
     RUST_COMPLEXITY_SIGNALS,
     RUST_RUSTDOC_LABEL,
+    RUST_UNUSED_IMPORT_LABEL,
 )
 from desloppify.languages.rust.tools import (
     CARGO_ERROR_CMD as RUST_CHECK_CMD,
     CLIPPY_WARNING_CMD as RUST_CLIPPY_CMD,
     parse_cargo_errors,
+    parse_cargo_unused_imports,
     parse_clippy_messages,
     run_rustdoc_result,
     scope_cargo_command,
@@ -195,6 +199,14 @@ cmd_rustdoc_warning = _make_tool_detect_command(
     RUST_RUSTDOC_LABEL,
     run_rustdoc_result,
 )
+cmd_cargo_unused_import = _make_tool_detect_command(
+    RUST_UNUSED_IMPORT_LABEL,
+    lambda path: run_tool_result(
+        scope_cargo_command(RUST_CHECK_CMD, path),
+        path,
+        parse_cargo_unused_imports,
+    ),
+)
 cmd_rust_import_hygiene = _make_entry_detect_command(
     "Rust import hygiene",
     detect_import_hygiene,
@@ -235,6 +247,14 @@ cmd_rust_unsafe_api = _make_entry_detect_command(
     "Rust unsafe API usage",
     detect_unsafe_api_usage,
 )
+cmd_rust_unused_dependency = _make_entry_detect_command(
+    "Rust unused dependencies",
+    detect_unused_dependencies,
+)
+cmd_rust_unsafe_inventory = _make_entry_detect_command(
+    "Rust unsafe inventory",
+    detect_unsafe_inventory,
+)
 
 
 def get_detect_commands() -> dict[str, DetectCommand]:
@@ -252,6 +272,7 @@ def get_detect_commands() -> dict[str, DetectCommand]:
             "clippy_warning": cmd_clippy_warning,
             "cargo_error": cmd_cargo_error,
             "rustdoc_warning": cmd_rustdoc_warning,
+            "cargo_unused_import": cmd_cargo_unused_import,
             "rust_import_hygiene": cmd_rust_import_hygiene,
             "rust_feature_hygiene": cmd_rust_feature_hygiene,
             "rust_doctest": cmd_rust_doctest,
@@ -262,12 +283,15 @@ def get_detect_commands() -> dict[str, DetectCommand]:
             "rust_async_locking": cmd_rust_async_locking,
             "rust_drop_safety": cmd_rust_drop_safety,
             "rust_unsafe_api": cmd_rust_unsafe_api,
+            "rust_unused_dependency": cmd_rust_unused_dependency,
+            "rust_unsafe_inventory": cmd_rust_unsafe_inventory,
         },
     )
 
 
 __all__ = [
     "cmd_cargo_error",
+    "cmd_cargo_unused_import",
     "cmd_clippy_warning",
     "cmd_complexity",
     "cmd_cycles",
@@ -286,6 +310,8 @@ __all__ = [
     "cmd_rust_import_hygiene",
     "cmd_rust_thread_safety",
     "cmd_rust_unsafe_api",
+    "cmd_rust_unsafe_inventory",
+    "cmd_rust_unused_dependency",
     "cmd_rustdoc_warning",
     "get_detect_commands",
 ]

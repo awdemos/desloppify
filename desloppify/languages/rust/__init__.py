@@ -36,6 +36,7 @@ from desloppify.languages.rust.phases import (
     phase_structural,
     tool_phase_audit,
     tool_phase_check,
+    tool_phase_unused_imports,
     tool_phase_clippy,
     tool_phase_rustdoc,
 )
@@ -95,6 +96,7 @@ class RustConfig(LangConfig):
                 DetectorPhase(RUST_POLICY_LABEL, phase_custom_policy),
                 tool_phase_clippy(),
                 tool_phase_check(),
+                tool_phase_unused_imports(),
                 tool_phase_rustdoc(),
                 tool_phase_audit(),
                 *tree_sitter_phases,

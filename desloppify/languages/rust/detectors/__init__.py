@@ -19,6 +19,7 @@ from .safety import (
     detect_unsafe_api_usage,
 )
 from .smells import detect_smells
+from .unsafe_inventory import detect_unsafe_inventory
 
 __all__ = [
     "build_dep_graph",
@@ -33,5 +34,6 @@ __all__ = [
     "detect_thread_safety_contracts",
     "detect_unused_dependencies",
     "detect_unsafe_api_usage",
+    "detect_unsafe_inventory",
     "detect_smells",
 ]

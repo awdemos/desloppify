@@ -15,6 +15,7 @@ from desloppify.languages.rust.tools import (
     build_rustdoc_warning_cmd,
     parse_audit_messages,
     parse_cargo_errors,
+    parse_cargo_unused_imports,
     parse_clippy_messages,
     parse_rustdoc_messages,
     run_audit_result,
@@ -613,6 +614,78 @@ def test_parse_cargo_errors_prefers_primary_span_and_includes_error_code():
             "message": "[E0425] cannot find value `answer` in this scope",
         }
     ]
+
+
+def _cargo_warning(code: str, message: str, file_name: str = "src/lib.rs") -> dict:
+    return {
+        "reason": "compiler-message",
+        "message": {
+            "level": "warning",
+            "message": message,
+            "code": {"code": code},
+            "spans": [
+                {
+                    "is_primary": True,
+                    "file_name": file_name,
+                    "line_start": 4,
+                },
+            ],
+        },
+    }
+
+
+def test_parse_cargo_unused_imports_keeps_only_unused_import_codes():
+    lines = "\n".join(
+        json.dumps(m)
+        for m in [
+            _cargo_warning("unused_imports", "unused import: `std::fmt::Write`"),
+            _cargo_warning("dead_code", "struct `Old` is never constructed"),
+            _cargo_warning("unused_variables", "unused variable: `x`"),
+        ]
+    )
+
+    entries = parse_cargo_unused_imports(lines, Path("."))
+
+    assert entries == [
+        {
+            "file": "src/lib.rs",
+            "line": 4,
+            "message": "[unused_imports] unused import: `std::fmt::Write`",
+        }
+    ]
+
+
+def test_parse_cargo_unused_imports_skips_errors_and_codeless_warnings():
+    lines = "\n".join(
+        json.dumps(m)
+        for m in [
+            _cargo_warning("unused_imports", "unused import: `x`"),
+            {
+                "reason": "compiler-message",
+                "message": {
+                    "level": "error",
+                    "message": "mismatched types",
+                    "code": {"code": "E0308"},
+                    "spans": [
+                        {"is_primary": True, "file_name": "src/lib.rs", "line_start": 1},
+                    ],
+                },
+            },
+            {
+                "reason": "compiler-message",
+                "message": {
+                    "level": "warning",
+                    "message": "unknown lint",
+                    "spans": [],
+                },
+            },
+        ]
+    )
+
+    entries = parse_cargo_unused_imports(lines, Path("."))
+
+    assert len(entries) == 1
+    assert entries[0]["message"] == "[unused_imports] unused import: `x`"
 
 
 def test_parse_rustdoc_messages_includes_lint_code():

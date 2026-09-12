@@ -40,6 +40,8 @@ from desloppify.languages.rust.detectors import (
     detect_public_api_conventions,
     detect_thread_safety_contracts,
     detect_unsafe_api_usage,
+    detect_unsafe_inventory,
+    detect_unused_dependencies,
 )
 from desloppify.languages.rust.detectors.deps import build_dep_graph
 from desloppify.languages.rust.tools import (
@@ -47,6 +49,7 @@ from desloppify.languages.rust.tools import (
     CLIPPY_WARNING_CMD as RUST_CLIPPY_CMD,
     RUSTDOC_WARNING_CMD as RUST_RUSTDOC_CMD,
     parse_cargo_errors,
+    parse_cargo_unused_imports,
     parse_clippy_messages,
     run_audit_result,
     run_rustdoc_result,
@@ -57,6 +60,7 @@ RUST_CLIPPY_LABEL = "cargo clippy"
 RUST_CHECK_LABEL = "cargo check"
 RUST_RUSTDOC_LABEL = "cargo rustdoc"
 RUST_AUDIT_LABEL = "cargo audit"
+RUST_UNUSED_IMPORT_LABEL = "cargo check unused imports"
 RUST_POLICY_LABEL = "Rust API + cargo policy"
 RUST_SIGNATURE_LABEL = "Signature analysis"
 
@@ -180,6 +184,8 @@ def phase_custom_policy(
         ("rust_async_locking", detect_async_locking),
         ("rust_drop_safety", detect_drop_safety),
         ("rust_unsafe_api", detect_unsafe_api_usage),
+        ("rust_unused_dependency", detect_unused_dependencies),
+        ("rust_unsafe_inventory", detect_unsafe_inventory),
     )
     results: list[Issue] = []
     counts: dict[str, int] = {}
@@ -288,6 +294,30 @@ def tool_phase_check():
     )
 
 
+def tool_phase_unused_imports():
+    return _make_rust_tool_phase(
+        "cargo check unused imports",
+        lambda path: run_tool_result(
+            scope_cargo_command(RUST_CHECK_CMD, path), path, parse_cargo_unused_imports
+        ),
+        "rust_unused_import",
+        tier=3,
+    )
+
+
+def tool_phase_unused_imports():
+    return _make_rust_tool_phase(
+        RUST_UNUSED_IMPORT_LABEL,
+        lambda path: run_tool_result(
+            scope_cargo_command(RUST_CHECK_CMD, path),
+            path,
+            parse_cargo_unused_imports,
+        ),
+        "rust_unused_import",
+        tier=3,
+    )
+
+
 def tool_phase_rustdoc():
     return _make_rust_tool_phase(
         RUST_RUSTDOC_LABEL,
@@ -317,6 +347,7 @@ __all__ = [
     "RUST_RUSTDOC_CMD",
     "RUST_RUSTDOC_LABEL",
     "RUST_SIGNATURE_LABEL",
+    "RUST_UNUSED_IMPORT_LABEL",
     "phase_coupling",
     "phase_custom_policy",
     "phase_signature",
@@ -325,4 +356,5 @@ __all__ = [
     "tool_phase_check",
     "tool_phase_clippy",
     "tool_phase_rustdoc",
+    "tool_phase_unused_imports",
 ]

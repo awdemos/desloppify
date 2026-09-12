@@ -61,6 +61,7 @@ def _parse_cargo_messages(
     scan_path: Path,
     *,
     allowed_levels: set[str],
+    allowed_codes: set[str] | None = None,
     skip_inline_cfg_test_modules: bool = False,
 ) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
@@ -93,6 +94,8 @@ def _parse_cargo_messages(
         ):
             continue
         code = (message.get("code") or {}).get("code") or ""
+        if allowed_codes is not None and code not in allowed_codes:
+            continue
         rendered = str(message.get("rendered") or message.get("message") or "").strip()
         if not rendered:
             continue
@@ -591,6 +594,22 @@ def _merge_line_ranges(ranges: list[tuple[int, int]]) -> list[tuple[int, int]]:
 def parse_cargo_errors(output: str, scan_path: Path) -> list[dict[str, Any]]:
     """Parse cargo-check compiler errors only."""
     return _parse_cargo_messages(output, scan_path, allowed_levels={"error"})
+
+
+def parse_cargo_unused_imports(output: str, scan_path: Path) -> list[dict[str, Any]]:
+    """Parse rustc's own unused-import warnings.
+
+    Compiler-precise: unlike textual cross-reference, rustc resolves trait
+    method usage, re-exports, and macro imports, so this stays quiet on
+    idiomatic Rust. Test-zone imports are skipped.
+    """
+    return _parse_cargo_messages(
+        output,
+        scan_path,
+        allowed_levels={"warning"},
+        allowed_codes={"unused_imports", "unused_qualifications", "unused_extern_crates"},
+        skip_inline_cfg_test_modules=True,
+    )
 
 
 def parse_rustdoc_messages(output: str, scan_path: Path) -> list[dict[str, Any]]:
