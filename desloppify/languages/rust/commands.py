@@ -42,6 +42,7 @@ from desloppify.languages.rust.detectors import (
 from desloppify.languages.rust.detectors.deps import build_dep_graph
 from desloppify.languages.rust.extractors import extract_functions, find_rust_files
 from desloppify.languages.rust.phases import (
+    RUST_AUDIT_LABEL,
     RUST_CHECK_LABEL,
     RUST_CLIPPY_LABEL,
     RUST_COMPLEXITY_SIGNALS,
@@ -54,6 +55,7 @@ from desloppify.languages.rust.tools import (
     parse_cargo_errors,
     parse_cargo_unused_imports,
     parse_clippy_messages,
+    run_audit_result,
     run_rustdoc_result,
     scope_cargo_command,
 )
@@ -199,6 +201,10 @@ cmd_rustdoc_warning = _make_tool_detect_command(
     RUST_RUSTDOC_LABEL,
     run_rustdoc_result,
 )
+cmd_cargo_audit = _make_tool_detect_command(
+    RUST_AUDIT_LABEL,
+    run_audit_result,
+)
 cmd_cargo_unused_import = _make_tool_detect_command(
     RUST_UNUSED_IMPORT_LABEL,
     lambda path: run_tool_result(
@@ -272,6 +278,7 @@ def get_detect_commands() -> dict[str, DetectCommand]:
             "clippy_warning": cmd_clippy_warning,
             "cargo_error": cmd_cargo_error,
             "rustdoc_warning": cmd_rustdoc_warning,
+            "cargo_audit": cmd_cargo_audit,
             "cargo_unused_import": cmd_cargo_unused_import,
             "rust_import_hygiene": cmd_rust_import_hygiene,
             "rust_feature_hygiene": cmd_rust_feature_hygiene,
@@ -290,6 +297,7 @@ def get_detect_commands() -> dict[str, DetectCommand]:
 
 
 __all__ = [
+    "cmd_cargo_audit",
     "cmd_cargo_error",
     "cmd_cargo_unused_import",
     "cmd_clippy_warning",

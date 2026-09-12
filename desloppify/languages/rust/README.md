@@ -78,6 +78,7 @@ Files in this folder:
   - `clippy_warning`
   - `cargo_error`
   - `cargo_unused_import`
+  - `cargo_audit`
   - `rustdoc_warning`
   - `rust_import_hygiene`
   - `rust_feature_hygiene`
