@@ -10,6 +10,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from desloppify.languages._framework.generic_parts.parsers import ToolParserError
 from desloppify.languages._framework.generic_parts.tool_runner import (
     SubprocessRun,
     ToolRunResult,
@@ -31,8 +32,16 @@ RUSTDOC_WARNING_CMD = (
     "cargo rustdoc --package {package} --all-features --lib --message-format=json "
     "-- -D rustdoc::broken_intra_doc_links "
     "-D rustdoc::private_intra_doc_links "
+    "-W rustdoc::missing_crate_level_docs "
+    "-W missing_docs 2>&1"
+)
+RUSTDOC_BIN_CMD = (
+    "cargo rustdoc --package {package} --all-features --bin {bin} --message-format=json "
+    "-- -D rustdoc::broken_intra_doc_links "
+    "-D rustdoc::private_intra_doc_links "
     "-W rustdoc::missing_crate_level_docs 2>&1"
 )
+AUDIT_CMD = "cargo audit --json"
 _CARGO_METADATA_CMD = "cargo metadata --format-version=1 --no-deps"
 _LIB_TARGET_KINDS = {"lib", "rlib", "dylib", "cdylib", "staticlib", "proc-macro"}
 _INLINE_MOD_RE = re.compile(
@@ -589,9 +598,57 @@ def parse_rustdoc_messages(output: str, scan_path: Path) -> list[dict[str, Any]]
     return _parse_cargo_messages(output, scan_path, allowed_levels={"warning", "error"})
 
 
+def parse_audit_messages(raw: str, scan_path: Path) -> list[dict[str, Any]]:
+    """Parse `cargo audit --json` vulnerabilities into diagnostic entries."""
+    del scan_path
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise ToolParserError(
+            "cargo audit parser could not decode JSON output"
+        ) from exc
+    if not isinstance(data, dict):
+        raise ToolParserError("cargo audit parser expected a JSON object")
+    vulnerabilities = data.get("vulnerabilities")
+    if not isinstance(vulnerabilities, dict):
+        return []
+    entries: list[dict[str, Any]] = []
+    for item in vulnerabilities.get("list") or []:
+        if not isinstance(item, dict):
+            continue
+        advisory = item.get("advisory")
+        package = item.get("package")
+        if not isinstance(advisory, dict) or not isinstance(package, dict):
+            continue
+        advisory_id = str(advisory.get("id") or "").strip()
+        title = str(advisory.get("title") or "").strip()
+        crate_name = str(package.get("name") or "").strip()
+        version = str(package.get("version") or "").strip()
+        severity = str(advisory.get("severity") or "").strip() or "unknown"
+        entries.append(
+            {
+                "file": "Cargo.lock",
+                "line": 1,
+                "message": (
+                    f"[{advisory_id}] {crate_name} {version}: "
+                    f"{title} (severity: {severity})"
+                ),
+            }
+        )
+    return entries
+
+
 def build_rustdoc_warning_cmd(package: str) -> str:
-    """Build a `cargo rustdoc` command for one workspace package."""
+    """Build a `cargo rustdoc` command for one workspace package library."""
     return RUSTDOC_WARNING_CMD.format(package=shlex.quote(package))
+
+
+def build_rustdoc_bin_cmd(package: str, bin_target: str) -> str:
+    """Build a `cargo rustdoc` command for one workspace package binary."""
+    return RUSTDOC_BIN_CMD.format(
+        package=shlex.quote(package),
+        bin=shlex.quote(bin_target),
+    )
 
 
 def scope_cargo_command(command: str, scan_path: Path) -> str:
@@ -621,11 +678,16 @@ def _filter_existing_rustdoc_entries(
     return [entry for entry in entries if _entry_file_exists(entry, workspace_root)]
 
 
-def _extract_workspace_rustdoc_packages(
+def _extract_workspace_rustdoc_invocations(
     payload: dict[str, Any], scan_path: Path | None = None
-) -> list[str]:
+) -> list[tuple[str, str | None]]:
+    """Return ``(package, bin target)`` rustdoc invocations for workspace packages.
+
+    A ``None`` bin target means the package library; named binary targets are
+    enumerated from cargo metadata so bins get the same doc-link checks.
+    """
     workspace_members = set(payload.get("workspace_members") or [])
-    packages: list[str] = []
+    invocations: list[tuple[str, str | None]] = []
     for package in payload.get("packages") or []:
         if not isinstance(package, dict) or package.get("id") not in workspace_members:
             continue
@@ -643,26 +705,34 @@ def _extract_workspace_rustdoc_packages(
         name = package.get("name")
         if not isinstance(name, str) or not name.strip():
             continue
-        targets = package.get("targets") or []
+        package_name = name.strip()
         has_lib_target = False
-        for target in targets:
+        bin_targets: list[str] = []
+        for target in package.get("targets") or []:
             if not isinstance(target, dict):
                 continue
             kinds = {str(kind) for kind in target.get("kind") or []}
             crate_types = {str(kind) for kind in target.get("crate_types") or []}
             if kinds & _LIB_TARGET_KINDS or crate_types & _LIB_TARGET_KINDS:
                 has_lib_target = True
-                break
+                continue
+            if "bin" not in kinds and "bin" not in crate_types:
+                continue
+            target_name = target.get("name")
+            if isinstance(target_name, str) and target_name.strip():
+                bin_targets.append(target_name.strip())
         if has_lib_target:
-            packages.append(name.strip())
-    return sorted(dict.fromkeys(packages))
+            invocations.append((package_name, None))
+        for bin_target in sorted(dict.fromkeys(bin_targets)):
+            invocations.append((package_name, bin_target))
+    return invocations
 
 
 def _run_cargo_metadata(
     scan_path: Path,
     *,
     run_subprocess: SubprocessRun | None = None,
-) -> tuple[ToolRunResult | None, list[str]]:
+) -> tuple[ToolRunResult | None, list[tuple[str, str | None]]]:
     runner: Callable[..., subprocess.CompletedProcess[str]] = run_subprocess or subprocess.run
     workspace_root = find_workspace_root(scan_path)
     try:
@@ -736,7 +806,7 @@ def _run_cargo_metadata(
             [],
         )
     scoped_path = scan_path if scan_path.resolve() != workspace_root else None
-    return None, _extract_workspace_rustdoc_packages(data, scoped_path)
+    return None, _extract_workspace_rustdoc_invocations(data, scoped_path)
 
 
 def run_rustdoc_result(
@@ -744,30 +814,42 @@ def run_rustdoc_result(
     *,
     run_subprocess: SubprocessRun | None = None,
 ) -> ToolRunResult:
-    """Run `cargo rustdoc` once per workspace library package."""
-    metadata_error, packages = _run_cargo_metadata(scan_path, run_subprocess=run_subprocess)
+    """Run `cargo rustdoc` for each workspace library and binary target."""
+    metadata_error, invocations = _run_cargo_metadata(
+        scan_path, run_subprocess=run_subprocess
+    )
     if metadata_error is not None:
         return metadata_error
-    if not packages:
+    if not invocations:
         return ToolRunResult(entries=[], status="empty", returncode=0)
 
     workspace_root = find_workspace_root(scan_path)
     entries: list[dict[str, Any]] = []
     returncode = 0
-    for package in packages:
+    for package, bin_target in invocations:
+        command = (
+            build_rustdoc_bin_cmd(package, bin_target)
+            if bin_target is not None
+            else build_rustdoc_warning_cmd(package)
+        )
         result = run_tool_result(
-            build_rustdoc_warning_cmd(package),
+            command,
             workspace_root,
             parse_rustdoc_messages,
             run_subprocess=run_subprocess,
         )
         if result.status == "error":
             message = result.message or "cargo rustdoc failed"
+            target = (
+                f"{package} --bin {bin_target}"
+                if bin_target is not None
+                else package
+            )
             return ToolRunResult(
                 entries=[],
                 status="error",
                 error_kind=result.error_kind,
-                message=f"{package}: {message}",
+                message=f"{target}: {message}",
                 returncode=result.returncode,
             )
         if result.status == "ok":
@@ -779,13 +861,32 @@ def run_rustdoc_result(
     return ToolRunResult(entries=entries, status="ok", returncode=returncode)
 
 
+def run_audit_result(
+    scan_path: Path,
+    *,
+    run_subprocess: SubprocessRun | None = None,
+) -> ToolRunResult:
+    """Run `cargo audit` from the workspace root."""
+    return run_tool_result(
+        AUDIT_CMD,
+        find_workspace_root(scan_path),
+        parse_audit_messages,
+        run_subprocess=run_subprocess,
+    )
+
+
 __all__ = [
+    "AUDIT_CMD",
+    "build_rustdoc_bin_cmd",
     "build_rustdoc_warning_cmd",
     "CARGO_ERROR_CMD",
     "CLIPPY_WARNING_CMD",
+    "RUSTDOC_BIN_CMD",
     "RUSTDOC_WARNING_CMD",
+    "parse_audit_messages",
     "parse_cargo_errors",
     "parse_clippy_messages",
     "parse_rustdoc_messages",
+    "run_audit_result",
     "run_rustdoc_result",
 ]

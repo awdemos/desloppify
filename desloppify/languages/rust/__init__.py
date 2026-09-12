@@ -25,6 +25,7 @@ from desloppify.languages.rust.extractors import (
     find_rust_files,
 )
 from desloppify.languages.rust.phases import (
+    RUST_AUDIT_LABEL,
     RUST_CHECK_LABEL,
     RUST_CLIPPY_LABEL,
     RUST_POLICY_LABEL,
@@ -33,6 +34,7 @@ from desloppify.languages.rust.phases import (
     phase_custom_policy,
     phase_signature,
     phase_structural,
+    tool_phase_audit,
     tool_phase_check,
     tool_phase_clippy,
     tool_phase_rustdoc,
@@ -94,6 +96,7 @@ class RustConfig(LangConfig):
                 tool_phase_clippy(),
                 tool_phase_check(),
                 tool_phase_rustdoc(),
+                tool_phase_audit(),
                 *tree_sitter_phases,
                 DetectorPhase("Signature analysis", phase_signature),
                 detector_phase_test_coverage(),
@@ -148,6 +151,7 @@ __all__ = [
     "RustConfig",
     "register",
     "register_hooks",
+    "RUST_AUDIT_LABEL",
     "RUST_CHECK_LABEL",
     "RUST_CLIPPY_LABEL",
     "RUST_ENTRY_PATTERNS",
