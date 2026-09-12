@@ -55,6 +55,9 @@ BARREL_BASENAMES: set[str] = {"lib.rs"}
 _INLINE_TEST_RE = re.compile(
     r"(?m)#\s*\[\s*(?:cfg\s*\(\s*test\s*\)|test)\s*\]"
 )
+_DOC_FENCE_RE = re.compile(r"^\s*//[/!]\s*```([^\s`]*)")
+_DOC_FENCE_CONTENT_PREFIX_RE = re.compile(r"^\s*//[/!]\s?")
+_NON_DOCTEST_FENCE_FLAGS = frozenset({"ignore", "text"})
 _LOGIC_RE = re.compile(
     r"(?m)^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?"
     r"(?:fn|struct|enum|trait|impl)\b"
@@ -135,9 +138,48 @@ def promote_owner_covered_files(
     return promoted
 
 
+def has_doctest_examples(content: str) -> bool:
+    """Return True when Rust doc comments hold fenced doctest examples.
+
+    Recognizes fenced code blocks inside ``///`` item docs and ``//!`` module
+    docs. Untagged fences compile as Rust by default, and ``rust`` fences keep
+    compiling unless flagged ``ignore`` or ``text`` (``no_run``,
+    ``compile_fail``, ``should_panic`` still count). Fences carrying another
+    language tag are not Rust doctests, a fence with no content is not test
+    evidence, and an unclosed fence is ignored. Block doc comments
+    (``/** */`` / ``/*! */``) are not scanned.
+    """
+    in_fence = False
+    fence_is_doctest = False
+    fence_has_content = False
+    for line in content.splitlines():
+        match = _DOC_FENCE_RE.match(line)
+        if match is not None:
+            if in_fence and fence_is_doctest and fence_has_content:
+                return True
+            in_fence = not in_fence
+            if in_fence:
+                fence_is_doctest = _fence_tag_is_doctest(match.group(1))
+                fence_has_content = False
+            continue
+        if in_fence and not fence_has_content:
+            if _DOC_FENCE_CONTENT_PREFIX_RE.sub("", line, count=1).strip():
+                fence_has_content = True
+    return False
+
+
+def _fence_tag_is_doctest(tag: str) -> bool:
+    if not tag:
+        return True
+    if tag != "rust" and not tag.startswith("rust,"):
+        return False
+    flags = tag.removeprefix("rust").split(",")
+    return not any(flag in _NON_DOCTEST_FENCE_FLAGS for flag in flags if flag)
+
+
 def has_inline_tests(_filepath: str, content: str) -> bool:
-    """Return True when a Rust file embeds inline unit tests."""
-    return bool(_INLINE_TEST_RE.search(content))
+    """Return True when a Rust file embeds inline unit tests or doctests."""
+    return bool(_INLINE_TEST_RE.search(content)) or has_doctest_examples(content)
 
 
 def is_runtime_entrypoint(filepath: str, content: str) -> bool:
@@ -298,6 +340,7 @@ __all__ = [
     "MOCK_PATTERNS",
     "SNAPSHOT_PATTERNS",
     "TEST_FUNCTION_RE",
+    "has_doctest_examples",
     "has_inline_tests",
     "has_testable_logic",
     "expand_direct_test_targets",

@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import desloppify.languages.rust.test_coverage as rust_cov
+from desloppify.engine.detectors.test_coverage.detector import detect_test_coverage
+from desloppify.engine.policy.zones import FileZoneMap
 
 
 def _write(path: Path, rel_path: str, content: str) -> Path:
@@ -275,3 +277,164 @@ def test_direct_test_targets_expand_through_recursive_literal_includes(tmp_path)
     expanded = rust_cov.expand_direct_test_targets({str(owner.resolve())}, production)
 
     assert expanded == {str(internal.resolve()), str(codec.resolve())}
+
+
+_DOCTEST_ONLY_LIB = """\
+//! Arithmetic helpers.
+//!
+//! ```
+//! let total = demo::add(1, 2);
+//! assert_eq!(total, 3);
+//! ```
+
+/// Adds two integers.
+///
+/// ```rust
+/// let sum = demo::add(2, 3);
+/// assert_eq!(sum, 5);
+/// ```
+pub fn add(a: i32, b: i32) -> i32 {
+    a + b
+}
+"""
+
+_NO_TEST_EVIDENCE_LIB = """\
+pub fn triple(value: i32) -> i32 {
+    let mut total = 0;
+    total += value;
+    total += value;
+    total += value;
+    if total > 100 {
+        return total;
+    }
+    total
+}
+"""
+
+
+def test_has_doctest_examples_counts_rust_fenced_example():
+    content = (
+        "/// Adds two integers.\n"
+        "///\n"
+        "/// ```rust\n"
+        "/// let sum = demo::add(2, 3);\n"
+        "/// assert_eq!(sum, 5);\n"
+        "/// ```\n"
+        "pub fn add(a: i32, b: i32) -> i32 {\n"
+        "    a + b\n"
+        "}\n"
+    )
+    assert rust_cov.has_doctest_examples(content) is True
+
+
+def test_has_doctest_examples_counts_untagged_fence():
+    content = (
+        "/// ```\n"
+        "/// let sum = demo::add(2, 3);\n"
+        "/// assert_eq!(sum, 5);\n"
+        "/// ```\n"
+    )
+    assert rust_cov.has_doctest_examples(content) is True
+
+
+def test_has_doctest_examples_counts_no_run_fence():
+    content = (
+        "/// ```rust,no_run\n"
+        "/// demo::launch();\n"
+        "/// ```\n"
+    )
+    assert rust_cov.has_doctest_examples(content) is True
+
+
+def test_has_doctest_examples_ignores_ignore_and_text_fences():
+    content = (
+        "/// ```rust,ignore\n"
+        "/// let skipped = demo::add(1, 2);\n"
+        "/// ```\n"
+        "/// ```text\n"
+        "/// prose example, not Rust\n"
+        "/// ```\n"
+    )
+    assert rust_cov.has_doctest_examples(content) is False
+
+
+def test_has_doctest_examples_ignores_other_language_tags():
+    content = (
+        "/// ```toml\n"
+        "/// [dependencies]\n"
+        "/// demo = \"1\"\n"
+        "/// ```\n"
+    )
+    assert rust_cov.has_doctest_examples(content) is False
+
+
+def test_has_doctest_examples_ignores_plain_line_comment_backticks():
+    content = (
+        "// ```rust\n"
+        "// let fake = demo::add(1, 2);\n"
+        "// ```\n"
+        "// regular comments may mention `add` and ``` freely\n"
+        "pub fn add(a: i32, b: i32) -> i32 {\n"
+        "    a + b\n"
+        "}\n"
+    )
+    assert rust_cov.has_doctest_examples(content) is False
+
+
+def test_has_doctest_examples_counts_module_doc_fences():
+    content = (
+        "//! Crate-level helpers.\n"
+        "//!\n"
+        "//! ```rust\n"
+        "//! let value = demo::triple(2);\n"
+        "//! assert_eq!(value, 6);\n"
+        "//! ```\n"
+    )
+    assert rust_cov.has_doctest_examples(content) is True
+
+
+def test_has_doctest_examples_ignores_content_free_and_unclosed_fences():
+    assert rust_cov.has_doctest_examples("/// ```\n/// ```\n") is False
+    assert (
+        rust_cov.has_doctest_examples("/// ```rust\n/// let lost = 1;\n") is False
+    )
+
+
+def test_has_inline_tests_credits_doctest_only_file():
+    assert rust_cov.has_inline_tests("src/lib.rs", _DOCTEST_ONLY_LIB) is True
+
+
+def test_has_inline_tests_still_rejects_ignored_doctests_and_plain_comments():
+    ignored_only = (
+        "/// ```rust,ignore\n"
+        "/// let skipped = demo::add(1, 2);\n"
+        "/// ```\n"
+    )
+    assert rust_cov.has_inline_tests("src/lib.rs", ignored_only) is False
+    plain_comments = "// ```rust\n// let fake = demo::add(1, 2);\n// ```\n"
+    assert rust_cov.has_inline_tests("src/lib.rs", plain_comments) is False
+
+
+def test_detect_test_coverage_credits_rust_doctests_without_test_files(tmp_path):
+    doctest_lib = _write(tmp_path, "src/lib.rs", _DOCTEST_ONLY_LIB)
+    plain_lib = _write(tmp_path, "src/plain.rs", _NO_TEST_EVIDENCE_LIB)
+    graph = {
+        str(doctest_lib): {
+            "imports": set(),
+            "importers": set(),
+            "import_count": 0,
+            "importer_count": 0,
+        },
+        str(plain_lib): {
+            "imports": set(),
+            "importers": set(),
+            "import_count": 0,
+            "importer_count": 0,
+        },
+    }
+    zone_map = FileZoneMap([str(doctest_lib), str(plain_lib)], [])
+
+    entries, _potential = detect_test_coverage(graph, zone_map, "rust")
+
+    assert [entry["file"] for entry in entries] == [str(plain_lib)]
+    assert entries[0]["detail"]["kind"] == "untested_module"
