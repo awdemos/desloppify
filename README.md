@@ -2,6 +2,12 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/desloppify)](https://pypi.org/project/desloppify/) ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
 
+> **This is a continuing-development fork.** This repo forked from [peteromallet/desloppify](https://github.com/peteromallet/desloppify) and is actively moving forward while upstream review is stalled: every open upstream PR was individually reviewed (diff read, applied, and test-verified), the merge-ready ones were integrated here, and each excluded PR received a detailed review comment upstream explaining exactly what it needs. The integration was proposed back upstream as [peteromallet/desloppify#744](https://github.com/peteromallet/desloppify/pull/744).
+>
+> Beyond the integrated upstream PRs, this fork ships its own work — most notably a deepened Rust plugin: a `cargo audit` phase, compiler-precise unused-import detection (via rustc's own diagnostics), unused-Cargo.toml-dependency and unsafe-code-inventory detectors, doctest test-coverage credit, `include!()` ownership modeling, and large-scan performance fixes.
+>
+> **A rebrand is coming.** This fork will be renamed in the future; the project name, and with it the install instructions and package name below, will change. Install from this repository to get the fork's changes — the `desloppify` package on PyPI is upstream.
+
 Desloppify gives your AI coding agent the tools to identify, understand, and systematically improve codebase quality. It combines mechanical detection (dead code, duplication, complexity) with subjective LLM review (naming, abstractions, module boundaries), then works through a prioritized fix loop. State persists across scans so it chips away over multiple sessions, and the scoring is designed to resist gaming.
 
 <img src="assets/explained.png" width="100%">
