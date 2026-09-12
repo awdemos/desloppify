@@ -48,6 +48,7 @@ from desloppify.languages.rust.tools import (
     RUSTDOC_WARNING_CMD as RUST_RUSTDOC_CMD,
     parse_cargo_errors,
     parse_clippy_messages,
+    run_audit_result,
     run_rustdoc_result,
     scope_cargo_command,
 )
@@ -55,6 +56,7 @@ from desloppify.languages.rust.tools import (
 RUST_CLIPPY_LABEL = "cargo clippy"
 RUST_CHECK_LABEL = "cargo check"
 RUST_RUSTDOC_LABEL = "cargo rustdoc"
+RUST_AUDIT_LABEL = "cargo audit"
 RUST_POLICY_LABEL = "Rust API + cargo policy"
 RUST_SIGNATURE_LABEL = "Signature analysis"
 
@@ -295,7 +297,17 @@ def tool_phase_rustdoc():
     )
 
 
+def tool_phase_audit():
+    return _make_rust_tool_phase(
+        RUST_AUDIT_LABEL,
+        run_audit_result,
+        "cargo_audit_vulnerability",
+        tier=2,
+    )
+
+
 __all__ = [
+    "RUST_AUDIT_LABEL",
     "RUST_CHECK_CMD",
     "RUST_CHECK_LABEL",
     "RUST_CLIPPY_CMD",
@@ -309,6 +321,7 @@ __all__ = [
     "phase_custom_policy",
     "phase_signature",
     "phase_structural",
+    "tool_phase_audit",
     "tool_phase_check",
     "tool_phase_clippy",
     "tool_phase_rustdoc",
